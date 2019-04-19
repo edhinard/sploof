@@ -114,7 +114,6 @@ struct sploof_t {
   pthread_t thread;
   int running;
   unsigned long long packets;
-  struct timespec starttime;
 };
 
 
@@ -122,8 +121,11 @@ struct sploof_t {
 /* =========================================================================== */
 /* ================================ PROTOTYPES =============================== */
 /* =========================================================================== */
+void sighandler(int);
 struct params_t *get_params(int, char*[]);
 void error(const char *, ...);
+void printkMGTP(float);
+void printduration(long long);
 
 struct sploof_t *sploof_init(struct params_t*);
 void sploof_terminate(struct sploof_t*);
@@ -132,7 +134,6 @@ void sploof_add_udp(struct sploof_t*, int, int);
 void sploof_add_tcp(struct sploof_t*, int, int, int);
 void sploof_add_payload(struct sploof_t*, char*, int);
 void sploof_run(struct sploof_t*);
-void sploof_runinathread(struct sploof_t*);
 
 void ipv4_compute_checksum(cbdata*);
 void tcp_compute_checksum(cbdata*);
@@ -147,22 +148,130 @@ void find_hw_addr(struct params_t *);
 
 
 
+
 /* =========================================================================== */
 /* =========================================================================== */
 /* =========================================================================== */
+int end = 0;
 int main(int argc, char *argv[])
 {
   struct params_t *params = get_params(argc, argv);
   struct sploof_t *sploof = sploof_init(params);
-  sploof_runinathread(sploof);
-
-  while(1) {
-    fprintf(stderr,".");
-    sleep(1);
+  int ret = pthread_create(&sploof->thread, NULL, (void*(*)(void*))sploof_run, sploof);
+  if(ret != 0) {
+    error("cannot launch thread. error value=%d", ret);
   }
+  signal(SIGINT, sighandler);
+
+  /* periodically display statistics */
+  fprintf(stderr, "\n-----------------------------------------------------------\n");
+  struct timespec starttime;
+  clock_gettime(CLOCK_MONOTONIC_COARSE, &starttime); 
+  struct timespec Atime = starttime;
+  unsigned long long Apackets = 0;
+  int s = 1;
+  while(!end) {
+    sleep(s);
+    s *= 2;
+    if(s>30) s=30;
+
+    /* get number of sent packests and period duration */
+    struct timespec Btime;
+    clock_gettime(CLOCK_MONOTONIC_COARSE, &Btime);
+    unsigned long long Bpackets = sploof->packets;
+    float deltatime = Btime.tv_sec - Atime.tv_sec + (Btime.tv_nsec - Atime.tv_nsec)/1000000000.;
+    unsigned long long deltapackets = Bpackets - Apackets;
+    unsigned long long deltabytes = deltapackets * sploof->len;
+    Atime = Btime;
+    Apackets = Bpackets;
+
+    /* display */
+    char currenttime[50];
+    time_t t;
+    t = time(NULL);
+    strftime(currenttime, sizeof(currenttime), "%H:%M:%S", localtime(&t));
+    fprintf(stderr,"\r   %s    ", currenttime);
+    printkMGTP(deltapackets);
+    fprintf(stderr,"p ");
+    printkMGTP(deltapackets/deltatime);
+    fprintf(stderr, "p/sec - ");
+    printkMGTP(deltabytes);
+    fprintf(stderr,"B ");
+    printkMGTP(deltabytes/deltatime);
+    fprintf(stderr, "B/sec\n");
+
+    if(!sploof->running) {
+      end = 1;
+    }
+  }
+
+  /* summary */
+  struct timespec stoptime;
+  clock_gettime(CLOCK_MONOTONIC_COARSE, &stoptime);
+  fprintf(stderr, "-----------------------------------------------------------\n");
+  float deltatime = stoptime.tv_sec - starttime.tv_sec + (stoptime.tv_nsec - starttime.tv_nsec)/1000000000.;
+  printduration(deltatime);
+  fprintf(stderr,"   ");
+  printkMGTP(sploof->packets);
+  fprintf(stderr,"p ");
+  printkMGTP(sploof->packets/deltatime);
+  fprintf(stderr, "p/sec - ");
+  printkMGTP(sploof->packets*sploof->len);
+  fprintf(stderr,"B ");
+  printkMGTP(sploof->packets*sploof->len/deltatime);
+  fprintf(stderr, "B/sec\n");
+  
+  sploof->running=0;
+  pthread_join(sploof->thread, NULL);
   sploof_terminate(sploof);
 
   return(0);
+}
+void sighandler(int dummy)
+{
+  (void)dummy;
+  end = 1;
+}
+void printkMGTP(float num)
+{
+  char *unit = "?";
+  if(num > 1e15) {
+    unit = "P";
+    num /= 1e15;
+  } else if(num > 1e12) {
+    unit = "T";
+    num /= 1e12;
+  } else if(num > 1e9) {
+    unit = "G";
+    num /= 1e9;
+  } else if(num > 1e6) {
+    unit = "M";
+    num /= 1e6;
+  } else if(num > 1e3) {
+    unit = "k";
+    num /= 1e3;
+  } else {
+    unit = "";
+  }
+  int frac = (int)(num*10) % 10;
+  int ent = (int)num;
+  fprintf(stderr, "%3d,%d%s", ent, frac, unit);
+}
+void printduration(long long duration)
+{
+  int days = duration / (24 * 3600);
+  duration -= days * (24 * 3600);
+  int hours = duration / 3600;
+  duration -= hours * 3600;
+  int minutes = duration / 60;
+  duration -= minutes * 60;
+  int seconds = duration;
+  if(days) {
+    fprintf(stderr, "%2dd", days);
+  } else {
+    fprintf(stderr, "   ");
+  }
+  fprintf(stderr, "%02dh%02dm%02ds", hours, minutes, seconds);
 }
 
 
@@ -392,6 +501,7 @@ struct sploof_t *sploof_init(struct params_t *params)
   }  
 
   sploof->count = params->count;
+  sploof->running = 1;
   
   return(sploof);
 }
@@ -517,15 +627,6 @@ void sploof_add_payload(struct sploof_t *sploof, char *payload, int len)
   }
 }
 
-void sploof_runinathread(struct sploof_t *sploof)
-{
-  int ret = pthread_create(&sploof->thread, NULL, (void*(*)(void*))sploof_run, sploof);
-  if(ret != 0) {
-    error("cannot launch thread. error value=%d", ret);
-  }
-} 
-
-
 void sploof_run(struct sploof_t *sploof)
 {
   /* we do not want this thread to be interrupted by CTRL+C */
@@ -545,7 +646,6 @@ void sploof_run(struct sploof_t *sploof)
     sploof->datacb = sploof->checksumcb;
   }
 
-  sploof->running = 1;
   sploof->packets = 0;
   while(sploof->running) {
     /* apply change on buffer */
@@ -559,10 +659,8 @@ void sploof_run(struct sploof_t *sploof)
     sendto(sploof->sock, sploof->buf, sploof->len, 0, (struct sockaddr*)&sploof->sockaddr, sizeof(struct sockaddr_ll));
     sploof->packets++;
   
-    if(sploof->count == 1) {
+    if(sploof->count == sploof->packets) {
       sploof->running = 0;
-    } else if(sploof->count) {
-      sploof->count--;
     }
   }
 }
