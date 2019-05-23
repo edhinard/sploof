@@ -294,10 +294,10 @@ struct params_t *get_params(int argc, char *argv[])
   while(argc) {
     if(argv[0][0] != '-') {
       if(params.target) {
-	error("$unexpected argument %s", argv[0]);
+        error("$unexpected argument %s", argv[0]);
       }
       if(!inet_pton(AF_INET, argv[0], &params.dst_ip)) {
-	error("$%s is not a valid IPv4 address", argv[0]);
+        error("$%s is not a valid IPv4 address", argv[0]);
       }
       params.target = argv[0];
     }
@@ -306,10 +306,10 @@ struct params_t *get_params(int argc, char *argv[])
       argc--;
       (void)*argv++;
       if(!argc || argv[0][0] == '-') {
-	error("$missing --spoof value");
+        error("$missing --spoof value");
       }
       if(!inet_pton(AF_INET, argv[0], &params.src_ip)) {
-	error("$%s is not a valid IPv4 address", argv[0]);
+        error("$%s is not a valid IPv4 address", argv[0]);
       }
       params.spoof = argv[0];
     }
@@ -318,7 +318,7 @@ struct params_t *get_params(int argc, char *argv[])
       argc--;
       (void)*argv++;
       if(!argc || argv[0][0] == '-') {
-	error("$missing --count value");
+        error("$missing --count value");
       }
       params.count = atoi(argv[0]);
     }
@@ -327,18 +327,18 @@ struct params_t *get_params(int argc, char *argv[])
       argc--;
       (void)*argv++;
       if(!argc || argv[0][0] == '-') {
-	error("$missing --payload value");
+        error("$missing --payload value");
       }
       FILE *f = fopen(argv[0], "rb");
       if(!f) {
-	error("$cannot open file %s", argv[0]);
+        error("$cannot open file %s", argv[0]);
       }
       fseek(f, 0, SEEK_END);
       params.payloadlen = ftell(f);
       fseek(f, 0, SEEK_SET);
       params.payload = malloc(params.payloadlen);
       if(!params.payload) {
-	error("not enough memory for payload");
+        error("not enough memory for payload");
       }
       int unused = fread(params.payload, params.payloadlen, 1, f);
       (void)unused;
@@ -349,7 +349,7 @@ struct params_t *get_params(int argc, char *argv[])
       argc--;
       (void)*argv++;
       if(argc<2 || argv[0][0] == '-' || argv[1][0] == '-') {
-	error("$missing --udp values");
+        error("$missing --udp values");
       }
       params.protocol = UDP;
       params.udp.sport = atoi(argv[0]);
@@ -362,18 +362,18 @@ struct params_t *get_params(int argc, char *argv[])
       argc--;
       (void)*argv++;
       if(argc<3 || argv[0][0] == '-' || argv[1][0] == '-' || argv[2][0] == '-') {
-	error("$missing --tcp values");
+        error("$missing --tcp values");
       }
       params.protocol = TCP;
       params.tcp.sport = atoi(argv[0]);
       params.tcp.dport = atoi(argv[1]);
       for(char *p=argv[2]; *p; p++) {
-	const char* FLAGS = "FSRPAUEC";
-	char *i = index(FLAGS, *p);
-	if(i==0) {
-	  error("$bad flag value %c", *p);
-	}
-	params.tcp.flags |= 1<<(i-FLAGS);
+        const char* FLAGS = "FSRPAUEC";
+        char *i = index(FLAGS, *p);
+        if(i==0) {
+          error("$bad flag value %c", *p);
+        }
+        params.tcp.flags |= 1<<(i-FLAGS);
       }
       argc-=2;
       (void)*argv++;
@@ -381,7 +381,7 @@ struct params_t *get_params(int argc, char *argv[])
     }
 
     else {
-	error("$unexpected argument %s", argv[0]);
+        error("$unexpected argument %s", argv[0]);
     }
     
     argc--;
@@ -634,7 +634,7 @@ void sploof_run(struct sploof_t *sploof)
   sigemptyset(&mask); 
   sigaddset(&mask, SIGINT); 
   pthread_sigmask(SIG_BLOCK, &mask, NULL);
-	
+
   /* chain datacbs and checksumcbs */
   if(sploof->datacb) {
     struct cb_t *cb = sploof->datacb;
@@ -688,13 +688,13 @@ static inline unsigned short checksum2(const char *buf, unsigned size, unsigned 
 
   /* Handle tail less than 8-bytes long */
   buf = (const char *) b;
-  if (size & 4)	{
+  if (size & 4) {
     unsigned s = *(unsigned *)buf;
     sum += s;
     if (sum < s) sum++;
     buf += 4;
   }
-  if (size & 2)	{
+  if (size & 2) {
     unsigned short s = *(unsigned short *) buf;
     sum += s;
     if (sum < s) sum++;
@@ -866,10 +866,9 @@ int rtnl_talk(struct nlmsghdr *request, struct nlmsghdr **answer)
   return(len);
 }
 
-#define NLMSG_TAIL(nmsg)						\
-	((struct rtattr *) (((void *) (nmsg)) + NLMSG_ALIGN((nmsg)->nlmsg_len)))
+#define NLMSG_TAIL(nmsg)                                                \
+        ((struct rtattr *) (((void *) (nmsg)) + NLMSG_ALIGN((nmsg)->nlmsg_len)))
 void find_hw_addr(struct params_t *params)
-//void gateway(in_addr_t *ip)
 {
   struct in_addr gw_ip = {0};
   int ifnum = 0;
@@ -896,7 +895,7 @@ void find_hw_addr(struct params_t *params)
   /* Parse GET ROUTE answer -> gw ip addr */
   int has_dst = 0;
   int has_gw = 0;
-  struct in_addr dst_ip;
+  struct in_addr dst_ip = {0};
   if(NLMSG_OK(answer, nl_len)) {
       
     struct rtmsg *rt_msg = (struct rtmsg *)NLMSG_DATA(answer);
@@ -905,13 +904,13 @@ void find_hw_addr(struct params_t *params)
     while (RTA_OK(rt_attr, nd_len)) {
       switch (rt_attr->rta_type) {
       case NDA_DST:
-	has_dst = 1;
-	memcpy(&dst_ip, RTA_DATA(rt_attr), sizeof(dst_ip));
-	break;
+        has_dst = 1;
+        memcpy(&dst_ip, RTA_DATA(rt_attr), sizeof(dst_ip));
+        break;
       case RTA_GATEWAY:
-	has_gw = 1;
-	memcpy(&gw_ip, RTA_DATA(rt_attr), sizeof(dst_ip));
-	break;
+        has_gw = 1;
+        memcpy(&gw_ip, RTA_DATA(rt_attr), sizeof(dst_ip));
+        break;
       }
       rt_attr = RTA_NEXT(rt_attr, nd_len);
     }
@@ -944,13 +943,14 @@ void find_hw_addr(struct params_t *params)
     while(RTA_OK(rt_attr, rt_len)) {
       switch (rt_attr->rta_type) {
       case NDA_LLADDR:
-	memcpy(&params->dst_mac, RTA_DATA(rt_attr), IFHWADDRLEN);
-	break;
+        memcpy(&params->dst_mac, RTA_DATA(rt_attr), IFHWADDRLEN);
+        break;
       case NDA_DST:
-	if(*(in_addr_t*)RTA_DATA(rt_attr) == *(in_addr_t*)&gw_ip) {
-	  found = 1;
-	}
-	break;
+        if((has_gw && (*(in_addr_t*)RTA_DATA(rt_attr) == *(in_addr_t*)&gw_ip)) ||
+           (has_dst && (*(in_addr_t*)RTA_DATA(rt_attr) == *(in_addr_t*)&dst_ip))) {
+          found = 1;
+        }
+        break;
       }
       rt_attr = RTA_NEXT(rt_attr, rt_len);
     }
